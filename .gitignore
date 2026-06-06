@@ -1,0 +1,13 @@
+app/node_modules/
+app/bridge/
+app/src-tauri/target/
+app/src-tauri/gen/
+app/src-tauri/.tauri/
+probes/
+theme-screenshots/
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc

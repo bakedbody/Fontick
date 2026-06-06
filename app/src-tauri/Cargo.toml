@@ -1,0 +1,24 @@
+[package]
+name = "fontick"
+version = "0.1.0"
+description = "Small Photoshop font picker"
+authors = ["暴二羊"]
+license = "GPL-3.0-only"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.6.0", features = [] }
+
+[dependencies]
+pinyin = { version = "0.11", default-features = false, features = ["plain"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.10.0", features = [] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Ole",
+  "Win32_System_Variant"
+] }
