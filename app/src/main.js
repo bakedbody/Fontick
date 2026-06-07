@@ -1159,16 +1159,45 @@ function cssFontFamily(...names) {
   return names
     .map((name) => String(name || "").trim())
     .filter(Boolean)
-    .map((name) => `"${name.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
+    .map(cssString)
     .join(", ");
 }
 
 function applyPreviewFontStyle(element, font) {
-  element.style.fontFamily = cssFontFamily(font.name, font.postScriptName, font.family);
   const meta = state.previewMeta.get(font.postScriptName);
+  const registeredFamily = ensurePreviewFontFace(meta);
+  element.style.fontFamily = registeredFamily
+    ? cssFontFamily(registeredFamily, font.family, font.name)
+    : cssFontFamily(font.name, font.postScriptName, font.family);
   if (meta?.weight) {
     element.style.fontWeight = String(meta.weight);
   }
+}
+
+function ensurePreviewFontFace(meta) {
+  if (!meta?.postScriptName || !meta?.weight || !meta?.localNames?.length) return "";
+
+  const family = `fontick-${meta.postScriptName}`;
+  const styleId = `fontick-font-face-${meta.postScriptName}`;
+  if (document.getElementById(styleId)) return family;
+
+  const localNames = uniqueStrings([meta.postScriptName, ...meta.localNames]);
+  const style = document.createElement("style");
+  style.id = styleId;
+  style.textContent = `
+@font-face {
+  font-family: ${cssString(family)};
+  src: ${localNames.map((name) => `local(${cssString(name)})`).join(", ")};
+  font-weight: ${meta.weight};
+  font-style: normal;
+}
+`;
+  document.head.appendChild(style);
+  return family;
+}
+
+function cssString(value) {
+  return `"${String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 function requestPreviewMeta(fonts) {
