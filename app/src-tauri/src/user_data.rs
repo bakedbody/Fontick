@@ -23,7 +23,7 @@ pub struct FontUserData {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct UserSettings {
     pub preview_mode: String,
     pub preview_text: String,

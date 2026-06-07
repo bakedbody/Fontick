@@ -1,4 +1,5 @@
 const { invoke } = window.__TAURI__.core;
+const appWindow = window.__TAURI__.window.getCurrentWindow();
 
 const rowHeight = 42;
 const familyHeight = 42;
@@ -33,6 +34,7 @@ const state = {
   lastSelectKey: null,
   previewMeta: new Map(),
   previewMetaLoading: new Set(),
+  alwaysOnTop: false,
   userData: defaultUserData(),
   filters: {
     favorite: false,
@@ -60,7 +62,9 @@ const refs = {
   previewTextInput: document.querySelector("#previewTextInput"),
   previewSizeInput: document.querySelector("#previewSizeInput"),
   previewSizeText: document.querySelector("#previewSizeText"),
+  displaybar: document.querySelector(".displaybar"),
   toggleFamiliesBtn: document.querySelector("#toggleFamiliesBtn"),
+  alwaysOnTopBtn: document.querySelector("#alwaysOnTopBtn"),
   metaModeBtns: document.querySelector("#metaModeBtns"),
   batchBar: document.querySelector("#batchBar"),
   batchCount: document.querySelector("#batchCount"),
@@ -112,6 +116,8 @@ function bindEvents() {
     state.scrollTop = refs.viewport.scrollTop;
     renderList();
   });
+  refs.viewport.addEventListener("mousedown", handleClearSelectionArea);
+  refs.displaybar.addEventListener("mousedown", handleClearSelectionArea);
   window.addEventListener("resize", renderList);
 
   document.querySelectorAll("[data-filter]").forEach((button) => {
@@ -151,6 +157,7 @@ function bindEvents() {
     saveUserDataSoon();
   });
   refs.toggleFamiliesBtn.addEventListener("click", toggleAllFamilies);
+  refs.alwaysOnTopBtn.addEventListener("click", toggleAlwaysOnTop);
   refs.metaModeBtns.addEventListener("click", (event) => {
     const mode = event.target?.dataset?.metaMode;
     if (!mode) return;
@@ -513,6 +520,17 @@ function handleFontMouseDown(event, font) {
   state.selectedBatch.clear();
   state.lastSelectKey = null;
   applyFont(font);
+}
+
+function handleClearSelectionArea(event) {
+  if (!state.selected && state.selectedBatch.size === 0) return;
+  if (event.target.closest("button, input, select, textarea, label, .font-row, .family-row")) return;
+
+  state.selected = null;
+  state.selectedBatch.clear();
+  state.lastSelectKey = null;
+  render();
+  setStatus("已取消选中项");
 }
 
 async function applyFont(font) {
@@ -898,6 +916,30 @@ function toggleAllFamilies() {
   render();
 }
 
+async function toggleAlwaysOnTop() {
+  const next = !state.alwaysOnTop;
+  const previous = !!state.alwaysOnTop;
+  state.alwaysOnTop = next;
+  syncControls();
+  try {
+    await applyAlwaysOnTop(true);
+  } catch {
+    state.alwaysOnTop = previous;
+    syncControls();
+  }
+}
+
+async function applyAlwaysOnTop(showStatus) {
+  const enabled = !!state.alwaysOnTop;
+  try {
+    await appWindow.setAlwaysOnTop(enabled);
+    if (showStatus) setStatus(enabled ? "窗口已置顶" : "窗口已取消置顶");
+  } catch (error) {
+    setError(`设置窗口置顶失败：${error}`);
+    throw error;
+  }
+}
+
 function batchUpdateTags(mode) {
   const tag = refs.batchTagInput.value.trim();
   if (!tag) return;
@@ -1248,6 +1290,9 @@ function syncControls() {
   refs.metaModeBtns.querySelectorAll("button").forEach((button) => {
     button.classList.toggle("active", button.dataset.metaMode === state.userData.settings.metaMode);
   });
+  refs.alwaysOnTopBtn.classList.toggle("active", !!state.alwaysOnTop);
+  refs.alwaysOnTopBtn.setAttribute("aria-pressed", state.alwaysOnTop ? "true" : "false");
+  refs.alwaysOnTopBtn.title = state.alwaysOnTop ? "取消窗口置顶" : "窗口置顶";
 }
 
 function setBusy(loading, text) {

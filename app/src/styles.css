@@ -178,6 +178,11 @@ button:disabled {
   padding: 0;
 }
 
+.icon-button.active {
+  border-color: var(--accent);
+  background: var(--accent2);
+}
+
 .filter-button {
   display: inline-flex;
   align-items: center;

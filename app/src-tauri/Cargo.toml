@@ -1,6 +1,6 @@
 [package]
 name = "fontick"
-version = "1.0.0"
+version = "1.0.1"
 description = "Small Photoshop font picker"
 authors = ["暴二羊"]
 license = "GPL-3.0-only"
