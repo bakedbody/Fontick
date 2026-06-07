@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod photoshop;
+mod font_meta;
 mod photoshop_theme;
 mod user_data;
 
@@ -116,6 +117,15 @@ fn sync_photoshop_theme(app: tauri::AppHandle) -> Result<photoshop_theme::ThemeR
     photoshop_theme::sync(app)
 }
 
+#[tauri::command]
+async fn resolve_font_preview_meta(
+    post_script_names: Vec<String>,
+) -> Result<Vec<font_meta::FontPreviewMeta>, String> {
+    tauri::async_runtime::spawn_blocking(move || font_meta::resolve(post_script_names))
+        .await
+        .map_err(|err| err.to_string())?
+}
+
 fn build_search_text(name: &str, family: &str, style: &str, post_script_name: &str) -> String {
     let label = [family, style]
         .into_iter()
@@ -164,7 +174,8 @@ fn main() {
             save_user_data,
             export_user_data,
             import_user_data,
-            sync_photoshop_theme
+            sync_photoshop_theme,
+            resolve_font_preview_meta
         ])
         .run(tauri::generate_context!())
         .expect("error while running Fontick");

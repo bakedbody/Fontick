@@ -31,6 +31,8 @@ const state = {
   scrollTop: 0,
   selectedBatch: new Set(),
   lastSelectKey: null,
+  previewMeta: new Map(),
+  previewMetaLoading: new Set(),
   userData: defaultUserData(),
   filters: {
     favorite: false,
@@ -210,6 +212,8 @@ async function refreshFonts() {
     const fonts = await invoke("list_fonts", { expectedPath: expectedPath() });
     state.rawFonts = fonts;
     state.fonts = fonts.map(normalizeFont);
+    state.previewMeta.clear();
+    state.previewMetaLoading.clear();
     rebuildList();
     render();
     setStatus(`已载入 ${state.fonts.length} 个字体`);
@@ -412,12 +416,16 @@ function renderList() {
   const startY = Math.max(0, state.scrollTop - rowHeight * overscan);
   const endY = state.scrollTop + viewportHeight + rowHeight * overscan;
   const fragment = document.createDocumentFragment();
+  const visibleFonts = [];
 
   for (const item of state.flatItems) {
     if (item.top + item.height < startY || item.top > endY) continue;
+    if (item.type === "font") visibleFonts.push(item.font);
+    if (item.type === "family" && item.group.representative) visibleFonts.push(item.group.representative);
     fragment.appendChild(item.type === "family" ? renderFamilyRow(item) : renderFontRow(item));
   }
   refs.inner.appendChild(fragment);
+  requestPreviewMeta(visibleFonts);
 }
 
 function renderFamilyRow(item) {
@@ -450,7 +458,7 @@ function renderFamilyRow(item) {
   name.className = "family-name";
   const rep = item.group.representative;
   name.textContent = rep ? previewText(rep) : item.group.family;
-  if (rep) name.style.fontFamily = cssFontFamily(rep.name, rep.postScriptName, rep.family);
+  if (rep) applyPreviewFontStyle(name, rep);
   name.style.fontSize = `${state.userData.settings.previewSize}px`;
 
   const count = document.createElement("span");
@@ -479,7 +487,7 @@ function renderFontRow(item) {
   const preview = document.createElement("div");
   preview.className = "font-preview";
   preview.textContent = previewText(font);
-  preview.style.fontFamily = cssFontFamily(font.name, font.postScriptName, font.family);
+  applyPreviewFontStyle(preview, font);
   preview.style.fontSize = `${state.userData.settings.previewSize}px`;
 
   const meta = document.createElement("div");
@@ -1153,6 +1161,48 @@ function cssFontFamily(...names) {
     .filter(Boolean)
     .map((name) => `"${name.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
     .join(", ");
+}
+
+function applyPreviewFontStyle(element, font) {
+  element.style.fontFamily = cssFontFamily(font.name, font.postScriptName, font.family);
+  const meta = state.previewMeta.get(font.postScriptName);
+  if (meta?.weight) {
+    element.style.fontWeight = String(meta.weight);
+  }
+}
+
+function requestPreviewMeta(fonts) {
+  const batch = [];
+  for (const font of fonts) {
+    const postScriptName = font?.postScriptName;
+    if (!postScriptName) continue;
+    if (state.previewMeta.has(postScriptName)) continue;
+    if (state.previewMetaLoading.has(postScriptName)) continue;
+    state.previewMetaLoading.add(postScriptName);
+    batch.push(postScriptName);
+    if (batch.length >= 20) break;
+  }
+  if (!batch.length) return;
+
+  invoke("resolve_font_preview_meta", { postScriptNames: batch })
+    .then((items) => {
+      for (const postScriptName of batch) {
+        state.previewMeta.set(postScriptName, { postScriptName, weight: 0, localNames: [] });
+      }
+      for (const item of items || []) {
+        if (!item?.postScriptName) continue;
+        state.previewMeta.set(item.postScriptName, item);
+      }
+    })
+    .catch(() => {
+      for (const postScriptName of batch) {
+        state.previewMeta.set(postScriptName, { postScriptName, weight: 0, localNames: [] });
+      }
+    })
+    .finally(() => {
+      for (const postScriptName of batch) state.previewMetaLoading.delete(postScriptName);
+      renderList();
+    });
 }
 
 function syncControls() {
