@@ -1,11 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod photoshop_com;
+mod photoshop;
 mod photoshop_theme;
 mod user_data;
 
+use photoshop::PhotoshopClient;
 use pinyin::ToPinyin;
-use photoshop_com::PhotoshopCom;
 use serde::{Deserialize, Serialize};
 use user_data::UserData;
 
@@ -37,8 +37,8 @@ struct ApplyResult {
 }
 
 #[tauri::command]
-fn photoshop_status(_expected_path: Option<String>) -> Result<PhotoshopStatus, String> {
-    let ps = PhotoshopCom::active(None)?;
+fn photoshop_status(expected_path: Option<String>) -> Result<PhotoshopStatus, String> {
+    let ps = PhotoshopClient::active(expected_path.as_deref())?;
     Ok(PhotoshopStatus {
         ok: true,
         path: ps.path()?,
@@ -47,14 +47,19 @@ fn photoshop_status(_expected_path: Option<String>) -> Result<PhotoshopStatus, S
 }
 
 #[tauri::command]
-fn list_fonts(_expected_path: Option<String>) -> Result<Vec<FontItem>, String> {
-    let ps = PhotoshopCom::active(None)?;
+fn list_fonts(expected_path: Option<String>) -> Result<Vec<FontItem>, String> {
+    let ps = PhotoshopClient::active(expected_path.as_deref())?;
     let fonts: Vec<FontItem> = ps
         .list_fonts()?
         .into_iter()
         .enumerate()
         .map(|(source_index, font)| {
-            let search_text = build_search_text(&font.name, &font.family, &font.style, &font.post_script_name);
+            let search_text = build_search_text(
+                &font.name,
+                &font.family,
+                &font.style,
+                &font.post_script_name,
+            );
             FontItem {
                 name: font.name,
                 family: font.family,
@@ -69,12 +74,15 @@ fn list_fonts(_expected_path: Option<String>) -> Result<Vec<FontItem>, String> {
 }
 
 #[tauri::command]
-fn apply_font(post_script_name: String, _expected_path: Option<String>) -> Result<ApplyResult, String> {
+fn apply_font(
+    post_script_name: String,
+    expected_path: Option<String>,
+) -> Result<ApplyResult, String> {
     if post_script_name.trim().is_empty() {
         return Err("postScriptName is empty".to_string());
     }
 
-    let ps = PhotoshopCom::active(None)?;
+    let ps = PhotoshopClient::active(expected_path.as_deref())?;
     let result = ps.apply_font(&post_script_name)?;
     Ok(ApplyResult {
         ok: result == "0",

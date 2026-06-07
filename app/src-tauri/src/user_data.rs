@@ -29,6 +29,7 @@ pub struct UserSettings {
     pub preview_text: String,
     pub preview_size: u32,
     pub meta_mode: String,
+    pub ps_theme: String,
     pub show_hidden: bool,
     pub expected_path: String,
 }
@@ -40,6 +41,7 @@ impl Default for UserSettings {
             preview_text: "永字八法 Aa123".to_string(),
             preview_size: 16,
             meta_mode: "name".to_string(),
+            ps_theme: String::new(),
             show_hidden: false,
             expected_path: String::new(),
         }

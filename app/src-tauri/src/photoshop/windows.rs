@@ -1,28 +1,9 @@
-use serde::Deserialize;
-
 #[derive(Debug, Clone)]
-pub struct PhotoshopCom {
-    #[cfg(windows)]
+pub struct PlatformClient {
     app: windows::Win32::System::Com::IDispatch,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RawFontPayload {
-    pub ok: bool,
-    pub fonts: Vec<RawFont>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RawFont {
-    pub name: String,
-    pub family: String,
-    pub style: String,
-    pub post_script_name: String,
-}
-
-impl PhotoshopCom {
+impl PlatformClient {
     pub fn active(expected_path: Option<&str>) -> Result<Self, String> {
         let app = get_active_photoshop()?;
         let ps = Self { app };
@@ -45,43 +26,7 @@ impl PhotoshopCom {
         self.get_string_property("Version")
     }
 
-    pub fn list_fonts(&self) -> Result<Vec<RawFont>, String> {
-        let payload = self.do_javascript(LIST_FONTS_JSX)?;
-        let data = serde_json::from_str::<RawFontPayload>(&payload).map_err(|err| err.to_string())?;
-        if !data.ok {
-            return Err("Photoshop font list failed".to_string());
-        }
-        Ok(data.fonts)
-    }
-
-    pub fn apply_font(&self, post_script_name: &str) -> Result<String, String> {
-        self.do_javascript(&make_apply_jsx(post_script_name))
-    }
-
-    fn get_string_property(&self, name: &str) -> Result<String, String> {
-        #[cfg(windows)]
-        unsafe {
-            let dispid = get_dispid(&self.app, name)?;
-            let mut result = windows::Win32::System::Variant::VARIANT::default();
-            let mut params = windows::Win32::System::Com::DISPPARAMS::default();
-            self.app
-                .Invoke(
-                    dispid,
-                    &windows::core::GUID::zeroed(),
-                    0x800,
-                    windows::Win32::System::Com::DISPATCH_PROPERTYGET,
-                    &mut params,
-                    Some(&mut result),
-                    None,
-                    None,
-                )
-                .map_err(|err| format!("{err:?}"))?;
-            variant_to_string(&mut result)
-        }
-    }
-
-    fn do_javascript(&self, jsx: &str) -> Result<String, String> {
-        #[cfg(windows)]
+    pub fn do_javascript(&self, jsx: &str) -> Result<String, String> {
         unsafe {
             let dispid = get_dispid(&self.app, "DoJavaScript")?;
             let mut arg = variant_bstr(jsx);
@@ -107,15 +52,33 @@ impl PhotoshopCom {
             variant_to_string(&mut result)
         }
     }
+
+    fn get_string_property(&self, name: &str) -> Result<String, String> {
+        unsafe {
+            let dispid = get_dispid(&self.app, name)?;
+            let mut result = windows::Win32::System::Variant::VARIANT::default();
+            let mut params = windows::Win32::System::Com::DISPPARAMS::default();
+            self.app
+                .Invoke(
+                    dispid,
+                    &windows::core::GUID::zeroed(),
+                    0x800,
+                    windows::Win32::System::Com::DISPATCH_PROPERTYGET,
+                    &mut params,
+                    Some(&mut result),
+                    None,
+                    None,
+                )
+                .map_err(|err| format!("{err:?}"))?;
+            variant_to_string(&mut result)
+        }
+    }
 }
 
 fn normalize_path(path: &str) -> String {
-    path.trim()
-        .trim_end_matches(['\\', '/'])
-        .to_lowercase()
+    path.trim().trim_end_matches(['\\', '/']).to_lowercase()
 }
 
-#[cfg(windows)]
 fn get_active_photoshop() -> Result<windows::Win32::System::Com::IDispatch, String> {
     use windows::core::Interface;
     use windows::Win32::System::Com::{
@@ -137,7 +100,6 @@ fn get_active_photoshop() -> Result<windows::Win32::System::Com::IDispatch, Stri
     }
 }
 
-#[cfg(windows)]
 unsafe fn get_dispid(
     dispatch: &windows::Win32::System::Com::IDispatch,
     name: &str,
@@ -157,7 +119,6 @@ unsafe fn get_dispid(
     Ok(dispid)
 }
 
-#[cfg(windows)]
 unsafe fn variant_bstr(text: &str) -> windows::Win32::System::Variant::VARIANT {
     use std::mem::ManuallyDrop;
     use windows::Win32::System::Variant::{VARIANT, VT_BSTR};
@@ -169,8 +130,9 @@ unsafe fn variant_bstr(text: &str) -> windows::Win32::System::Variant::VARIANT {
     value
 }
 
-#[cfg(windows)]
-unsafe fn variant_to_string(value: &mut windows::Win32::System::Variant::VARIANT) -> Result<String, String> {
+unsafe fn variant_to_string(
+    value: &mut windows::Win32::System::Variant::VARIANT,
+) -> Result<String, String> {
     use windows::Win32::System::Variant::{
         VariantChangeType, VariantClear, VARIANT, VAR_CHANGE_FLAGS, VT_BSTR,
     };
@@ -186,78 +148,3 @@ unsafe fn variant_to_string(value: &mut windows::Win32::System::Variant::VARIANT
     let _ = VariantClear(value);
     Ok(text)
 }
-
-fn js_string(value: &str) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
-}
-
-fn make_apply_jsx(post_script_name: &str) -> String {
-    format!(
-        r#"
-app.displayDialogs = DialogModes.NO;
-
-function ApplyFont() {{
-    try {{
-        if (app.documents.length === 0) return "NO_DOCUMENT";
-        if (app.activeDocument.activeLayer.kind !== LayerKind.TEXT) return "NO_TEXT_LAYER";
-
-        var desc = new ActionDescriptor();
-        var ref = new ActionReference();
-        ref.putProperty(charIDToTypeID("Prpr"), charIDToTypeID("TxtS"));
-        ref.putEnumerated(charIDToTypeID("TxLr"), charIDToTypeID("Ordn"), charIDToTypeID("Trgt"));
-        desc.putReference(charIDToTypeID("null"), ref);
-
-        var style = new ActionDescriptor();
-        style.putString(stringIDToTypeID("fontPostScriptName"), {});
-        desc.putObject(charIDToTypeID("T   "), charIDToTypeID("TxtS"), style);
-
-        executeAction(charIDToTypeID("setd"), desc, DialogModes.NO);
-        return "0";
-    }} catch (error) {{
-        return "ERR:" + error;
-    }}
-}}
-
-ApplyFont();
-"#,
-        js_string(post_script_name)
-    )
-}
-
-const LIST_FONTS_JSX: &str = r#"
-app.displayDialogs = DialogModes.NO;
-
-function esc(s) {
-    return String(s)
-        .replace(/\\/g, "\\\\")
-        .replace(/"/g, '\\"')
-        .replace(/\r/g, "\\r")
-        .replace(/\n/g, "\\n");
-}
-
-function attr(obj, name) {
-    try {
-        var value = obj[name];
-        if (value === undefined || value === null) return "";
-        return String(value);
-    } catch (e) {
-        return "";
-    }
-}
-
-function ListFonts() {
-    var out = '{"ok":true,"fonts":[';
-    for (var i = 0; i < app.fonts.length; i++) {
-        if (i > 0) out += ",";
-        var f = app.fonts[i];
-        out += '{"name":"' + esc(attr(f, "name")) +
-            '","family":"' + esc(attr(f, "family")) +
-            '","style":"' + esc(attr(f, "style")) +
-            '","postScriptName":"' + esc(attr(f, "postScriptName")) + '"}';
-    }
-    out += "]}";
-    return out;
-}
-
-ListFonts();
-"#;
