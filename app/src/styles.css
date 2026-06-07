@@ -1,28 +1,28 @@
 :root {
-  --bg: #2f2f2f;
-  --panel: #3a3a3a;
-  --soft: #4b4b4b;
-  --soft2: #575757;
+  --bg: #262626;
+  --panel: #323232;
+  --soft: #323232;
+  --soft2: #4a4a4a;
   --text: #f1f1f1;
   --muted: #b8b8b8;
-  --border: #666;
+  --border: #1f1f1f;
   --accent: #2d8cff;
   --accent2: rgba(45, 140, 255, 0.28);
   --danger: #ff7777;
-  --batch: #343434;
-  --family: #414141;
-  --small-list: #303030;
+  --batch: #323232;
+  --family: #4a4a4a;
+  --small-list: #323232;
   --overlay: rgba(0, 0, 0, 0.42);
 }
 
 :root[data-ps-theme="darkest"] {
-  --bg: #323232;
+  --bg: #262626;
   --panel: #323232;
-  --soft: #4a4a4a;
-  --soft2: #565656;
-  --text: #dbdbdb;
+  --soft: #323232;
+  --soft2: #4a4a4a;
+  --text: #f1f1f1;
   --muted: #b8b8b8;
-  --border: #212121;
+  --border: #1f1f1f;
   --accent: #154f7c;
   --accent2: rgba(21, 79, 124, 0.36);
   --danger: #ff7777;
@@ -33,13 +33,13 @@
 }
 
 :root[data-ps-theme="dark"] {
-  --bg: #535353;
+  --bg: #424242;
   --panel: #535353;
-  --soft: #5b5b5b;
-  --soft2: #676767;
+  --soft: #535353;
+  --soft2: #5b5b5b;
   --text: #f0f0f0;
   --muted: #d0d0d0;
-  --border: #383838;
+  --border: #3a3a3a;
   --accent: #154f7c;
   --accent2: rgba(21, 79, 124, 0.34);
   --danger: #ff7777;
@@ -50,10 +50,10 @@
 }
 
 :root[data-ps-theme="light"] {
-  --bg: #b8b8b8;
+  --bg: #a3a3a3;
   --panel: #b8b8b8;
-  --soft: #d3d2ce;
-  --soft2: #ddddda;
+  --soft: #b8b8b8;
+  --soft2: #d3d2ce;
   --text: #000000;
   --muted: #555555;
   --border: #949494;
@@ -62,15 +62,15 @@
   --danger: #c92525;
   --batch: #b8b8b8;
   --family: #d3d2ce;
-  --small-list: #d3d2ce;
+  --small-list: #b8b8b8;
   --overlay: rgba(0, 0, 0, 0.25);
 }
 
 :root[data-ps-theme="lightest"] {
-  --bg: #f0f0f0;
+  --bg: #dbdbdb;
   --panel: #f0f0f0;
-  --soft: #f5f5f5;
-  --soft2: #ffffff;
+  --soft: #f0f0f0;
+  --soft2: #f5f5f5;
   --text: #000000;
   --muted: #666666;
   --border: #cccccc;
@@ -79,7 +79,7 @@
   --danger: #c92525;
   --batch: #f0f0f0;
   --family: #f5f5f5;
-  --small-list: #f5f5f5;
+  --small-list: #f0f0f0;
   --overlay: rgba(0, 0, 0, 0.20);
 }
 
@@ -393,7 +393,7 @@ button:disabled {
 
 .font-row.batch-selected {
   border-color: var(--accent);
-  background: rgba(45, 140, 255, 0.2);
+  background: var(--accent2);
 }
 
 .font-row.hidden-font {
