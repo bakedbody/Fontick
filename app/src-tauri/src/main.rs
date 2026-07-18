@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod photoshop;
 mod font_meta;
+mod photoshop;
 mod photoshop_theme;
 mod user_data;
 
@@ -83,8 +83,8 @@ fn apply_font(
         return Err("postScriptName is empty".to_string());
     }
 
-    let ps = PhotoshopClient::active(expected_path.as_deref())?;
-    let result = ps.apply_font(&post_script_name)?;
+    let result =
+        PhotoshopClient::apply_font_for_current_state(expected_path.as_deref(), &post_script_name)?;
     Ok(ApplyResult {
         ok: result == "0",
         result,
