@@ -45,7 +45,6 @@ pub fn capture_text_selection_and_exit() -> Result<Option<TextSelectionCapture>,
         ClipboardCopy::Text(value) if !value.is_empty() => value,
         ClipboardCopy::NonText => {
             drop(clipboard_backup);
-            commit_text_editing(photoshop_pid)?;
             editing_exit.disarm();
             return Ok(None);
         }
@@ -88,7 +87,17 @@ pub fn capture_text_selection_and_exit() -> Result<Option<TextSelectionCapture>,
 
 pub fn exit_text_editing() -> Result<(), String> {
     ensure_event_access()?;
-    commit_text_editing(photoshop_pid()?)
+    let photoshop_pid = photoshop_pid()?;
+    let clipboard_backup = ClipboardRestore::capture()?;
+
+    std::thread::sleep(Duration::from_millis(20));
+    let copy_result = copy_text_with_retry(photoshop_pid, "editing-state", 2)?;
+    drop(clipboard_backup);
+
+    match copy_result {
+        ClipboardCopy::NonText => Ok(()),
+        ClipboardCopy::Text(_) | ClipboardCopy::TimedOut => commit_text_editing(photoshop_pid),
+    }
 }
 
 struct PhotoshopEditingExit {
