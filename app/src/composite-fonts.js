@@ -178,7 +178,7 @@ export function findMissingFonts(value, fonts = []) {
 export function mapCompositeApplyError(result, definition) {
   const message = String(result || "应用失败");
   if (message === "NO_DOCUMENT") return "Photoshop 中没有打开的文档";
-  if (message === "NO_TEXT_LAYER") return "当前图层不是文字图层";
+  if (message === "NO_TEXT_LAYER") return "当前选择中没有文字图层";
   if (message.startsWith("MISSING_FONT:")) {
     return `缺少字体：${message.slice("MISSING_FONT:".length)}`;
   }

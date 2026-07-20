@@ -84,6 +84,7 @@ function ResolveFontIndexes(text, regexes) {
     for (var ruleIndex = 0; ruleIndex < CONFIG.customRules.length; ruleIndex++) {
         var rule = CONFIG.customRules[ruleIndex];
         var regex = regexes[ruleIndex];
+        regex.lastIndex = 0;
         var match;
         while ((match = regex.exec(text)) !== null) {
             if (match[0].length === 0) {
@@ -151,82 +152,165 @@ function AddStyleRange(list, from, to, sourceRange, fontIndex, fonts, changeFont
     list.putObject(charIDToTypeID("Txtt"), range);
 }
 
+var PENDING_COMPOSITE_LAYERS = [];
+
+function GetSelectedLayerIds() {
+    var ids = [];
+    try {
+        var selectedKey = stringIDToTypeID("targetLayersIDs");
+        var selectedRef = new ActionReference();
+        selectedRef.putProperty(stringIDToTypeID("property"), selectedKey);
+        selectedRef.putEnumerated(
+            stringIDToTypeID("document"),
+            stringIDToTypeID("ordinal"),
+            stringIDToTypeID("targetEnum")
+        );
+        var selectedDesc = executeActionGet(selectedRef);
+        if (selectedDesc.hasKey(selectedKey)) {
+            var selected = selectedDesc.getList(selectedKey);
+            for (var i = 0; i < selected.count; i++) {
+                ids.push(Number(selected.getReference(i).getIdentifier()));
+            }
+        }
+    } catch (error) {}
+
+    if (ids.length === 0) {
+        var layerIdKey = stringIDToTypeID("layerID");
+        var activeRef = new ActionReference();
+        activeRef.putProperty(stringIDToTypeID("property"), layerIdKey);
+        activeRef.putEnumerated(
+            stringIDToTypeID("layer"),
+            stringIDToTypeID("ordinal"),
+            stringIDToTypeID("targetEnum")
+        );
+        ids.push(executeActionGet(activeRef).getInteger(layerIdKey));
+    }
+    return ids;
+}
+
+function GetTextLayerById(layerId) {
+    var layerRef = new ActionReference();
+    layerRef.putIdentifier(stringIDToTypeID("layer"), layerId);
+    var layer = executeActionGet(layerRef);
+    var textKey = stringIDToTypeID("textKey");
+    if (!layer.hasKey(textKey)) return null;
+    return layer.getObjectValue(textKey);
+}
+
+function PrepareCompositeLayer(layerId, textLayer, fonts, regexes) {
+    var text = String(textLayer.getString(stringIDToTypeID("textKey")));
+    if (text.length === 0) return null;
+
+    var sourceRanges = textLayer.getList(charIDToTypeID("Txtt"));
+    var fontIndexes = ResolveFontIndexes(text, regexes);
+    var fontRuns = BuildFontRuns(fontIndexes);
+    var targetRanges = new ActionList();
+
+    for (var sourceIndex = 0; sourceIndex < sourceRanges.count; sourceIndex++) {
+        var sourceRange = sourceRanges.getObjectValue(sourceIndex);
+        var sourceFrom = sourceRange.getInteger(charIDToTypeID("From"));
+        var sourceTo = sourceRange.getInteger(charIDToTypeID("T   "));
+
+        if (sourceFrom >= text.length) {
+            AddStyleRange(
+                targetRanges,
+                sourceFrom,
+                sourceTo,
+                sourceRange,
+                0,
+                fonts,
+                false
+            );
+            continue;
+        }
+
+        for (var runIndex = 0; runIndex < fontRuns.length; runIndex++) {
+            var run = fontRuns[runIndex];
+            var from = Math.max(sourceFrom, run.from);
+            var to = Math.min(sourceTo, run.to);
+            AddStyleRange(
+                targetRanges,
+                from,
+                to,
+                sourceRange,
+                run.fontIndex,
+                fonts,
+                true
+            );
+        }
+
+        if (sourceTo > text.length) {
+            AddStyleRange(
+                targetRanges,
+                Math.max(sourceFrom, text.length),
+                sourceTo,
+                sourceRange,
+                0,
+                fonts,
+                false
+            );
+        }
+    }
+
+    textLayer.putList(charIDToTypeID("Txtt"), targetRanges);
+    return { layerId: layerId, textLayer: textLayer };
+}
+
+function CommitCompositeLayers() {
+    for (var i = 0; i < PENDING_COMPOSITE_LAYERS.length; i++) {
+        var pending = PENDING_COMPOSITE_LAYERS[i];
+        var setDesc = new ActionDescriptor();
+        var setRef = new ActionReference();
+        setRef.putIdentifier(stringIDToTypeID("layer"), pending.layerId);
+        setDesc.putReference(charIDToTypeID("null"), setRef);
+        setDesc.putObject(
+            charIDToTypeID("T   "),
+            charIDToTypeID("TxLr"),
+            pending.textLayer
+        );
+        executeAction(stringIDToTypeID("set"), setDesc, DialogModes.NO);
+    }
+}
+
 function ApplyCompositeFont() {
     try {
         if (app.documents.length === 0) return "NO_DOCUMENT";
-        if (app.activeDocument.activeLayer.kind !== LayerKind.TEXT) return "NO_TEXT_LAYER";
+
+        var layerIds = GetSelectedLayerIds();
+        var textLayers = [];
+        for (var layerIndex = 0; layerIndex < layerIds.length; layerIndex++) {
+            var textLayer = GetTextLayerById(layerIds[layerIndex]);
+            if (textLayer !== null) {
+                textLayers.push({ layerId: layerIds[layerIndex], textLayer: textLayer });
+            }
+        }
+        if (textLayers.length === 0) return "NO_TEXT_LAYER";
 
         var resolvedFonts = ResolveFonts();
         if (resolvedFonts.error) return resolvedFonts.error;
         var compiledRegexes = CompileRegexes();
         if (compiledRegexes.error) return compiledRegexes.error;
 
-        var getRef = new ActionReference();
-        getRef.putProperty(charIDToTypeID("Prpr"), stringIDToTypeID("textKey"));
-        getRef.putEnumerated(charIDToTypeID("TxLr"), charIDToTypeID("Ordn"), charIDToTypeID("Trgt"));
-        var layer = executeActionGet(getRef);
-        var textLayer = layer.getObjectValue(stringIDToTypeID("textKey"));
-        var text = String(textLayer.getString(stringIDToTypeID("textKey")));
-        var sourceRanges = textLayer.getList(charIDToTypeID("Txtt"));
-        if (text.length === 0) return "0";
-
-        var fontIndexes = ResolveFontIndexes(text, compiledRegexes.regexes);
-        var fontRuns = BuildFontRuns(fontIndexes);
-        var targetRanges = new ActionList();
-
-        for (var sourceIndex = 0; sourceIndex < sourceRanges.count; sourceIndex++) {
-            var sourceRange = sourceRanges.getObjectValue(sourceIndex);
-            var sourceFrom = sourceRange.getInteger(charIDToTypeID("From"));
-            var sourceTo = sourceRange.getInteger(charIDToTypeID("T   "));
-
-            if (sourceFrom >= text.length) {
-                AddStyleRange(
-                    targetRanges,
-                    sourceFrom,
-                    sourceTo,
-                    sourceRange,
-                    0,
-                    resolvedFonts.fonts,
-                    false
-                );
-                continue;
-            }
-
-            for (var runIndex = 0; runIndex < fontRuns.length; runIndex++) {
-                var run = fontRuns[runIndex];
-                var from = Math.max(sourceFrom, run.from);
-                var to = Math.min(sourceTo, run.to);
-                AddStyleRange(
-                    targetRanges,
-                    from,
-                    to,
-                    sourceRange,
-                    run.fontIndex,
-                    resolvedFonts.fonts,
-                    true
-                );
-            }
-
-            if (sourceTo > text.length) {
-                AddStyleRange(
-                    targetRanges,
-                    Math.max(sourceFrom, text.length),
-                    sourceTo,
-                    sourceRange,
-                    0,
-                    resolvedFonts.fonts,
-                    false
-                );
-            }
+        PENDING_COMPOSITE_LAYERS = [];
+        for (var textLayerIndex = 0; textLayerIndex < textLayers.length; textLayerIndex++) {
+            var item = textLayers[textLayerIndex];
+            var prepared = PrepareCompositeLayer(
+                item.layerId,
+                item.textLayer,
+                resolvedFonts.fonts,
+                compiledRegexes.regexes
+            );
+            if (prepared !== null) PENDING_COMPOSITE_LAYERS.push(prepared);
         }
 
-        textLayer.putList(charIDToTypeID("Txtt"), targetRanges);
-        var setDesc = new ActionDescriptor();
-        var setRef = new ActionReference();
-        setRef.putEnumerated(charIDToTypeID("TxLr"), charIDToTypeID("Ordn"), charIDToTypeID("Trgt"));
-        setDesc.putReference(charIDToTypeID("null"), setRef);
-        setDesc.putObject(charIDToTypeID("T   "), charIDToTypeID("TxLr"), textLayer);
-        executeAction(stringIDToTypeID("set"), setDesc, DialogModes.NO);
+        if (PENDING_COMPOSITE_LAYERS.length === 1) {
+            CommitCompositeLayers();
+        } else if (PENDING_COMPOSITE_LAYERS.length > 1) {
+            app.activeDocument.suspendHistory(
+                "Fontick Composite Font",
+                "CommitCompositeLayers()"
+            );
+        }
         return "0";
     } catch (error) {
         return "ERR:" + error;
@@ -290,7 +374,16 @@ mod tests {
         let jsx = make_apply_jsx(&minimal_compiled()).unwrap();
         assert!(jsx.contains("if (sourceFrom >= text.length)"));
         assert!(jsx.contains("Math.max(sourceFrom, text.length)"));
-        assert!(jsx.contains("if (text.length === 0) return \"0\";"));
+        assert!(jsx.contains("if (text.length === 0) return null;"));
+    }
+
+    #[test]
+    fn applies_selected_text_layers_by_id_in_one_history_state() {
+        let jsx = make_apply_jsx(&minimal_compiled()).unwrap();
+        assert!(jsx.contains("stringIDToTypeID(\"targetLayersIDs\")"));
+        assert!(jsx.contains("setRef.putIdentifier(stringIDToTypeID(\"layer\"), pending.layerId);"));
+        assert!(jsx.contains("app.activeDocument.suspendHistory("));
+        assert!(!jsx.contains("app.activeDocument.activeLayer.kind"));
     }
 
     #[test]

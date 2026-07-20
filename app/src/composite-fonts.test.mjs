@@ -240,7 +240,7 @@ test("opening another font picker cancels the previous pending search render", a
 test("maps composite apply errors to actionable messages", () => {
   const definition = normalizeCompositeFont({ name: "混排", baseFont: "Base" });
   assert.equal(mapCompositeApplyError("NO_DOCUMENT", definition), "Photoshop 中没有打开的文档");
-  assert.equal(mapCompositeApplyError("NO_TEXT_LAYER", definition), "当前图层不是文字图层");
+  assert.equal(mapCompositeApplyError("NO_TEXT_LAYER", definition), "当前选择中没有文字图层");
   assert.equal(mapCompositeApplyError("MISSING_FONT:Latin", definition), "缺少字体：Latin");
   assert.equal(mapCompositeApplyError("INVALID_REGEX:digits", definition), "复合字体“混排”的正则表达式无效：digits");
   assert.equal(mapCompositeApplyError("custom failure", definition), "custom failure");
