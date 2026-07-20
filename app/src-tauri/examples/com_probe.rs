@@ -1,5 +1,12 @@
+#[allow(dead_code)]
+#[path = "../src/composite_font.rs"]
+mod composite_font;
+#[allow(dead_code)]
 #[path = "../src/photoshop.rs"]
 mod photoshop;
+#[allow(dead_code)]
+#[path = "../src/unicode_ranges.rs"]
+mod unicode_ranges;
 
 use photoshop::PhotoshopClient;
 
@@ -32,10 +39,11 @@ fn main() {
     }
 
     if let Some(font) = font {
-        let result = ps.apply_font(&font).unwrap_or_else(|err| {
-            eprintln!("apply=ERR font={font} message={err}");
-            std::process::exit(3);
-        });
+        let result = PhotoshopClient::apply_font_for_current_state(expected_path.as_deref(), &font)
+            .unwrap_or_else(|err| {
+                eprintln!("apply=ERR font={font} message={err}");
+                std::process::exit(3);
+            });
         println!("apply={} font={}", result, font);
         if result != "0" {
             std::process::exit(4);

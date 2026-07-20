@@ -11,3 +11,5 @@ theme-screenshots/
 Thumbs.db
 __pycache__/
 *.pyc
+.superpowers/
+docs/superpowers/

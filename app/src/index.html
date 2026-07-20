@@ -52,37 +52,54 @@
       </section>
 
       <section class="displaybar">
-        <div class="segmented" id="previewModeBtns">
-          <button data-preview-mode="name">名称</button>
-          <button data-preview-mode="family">字族</button>
-          <button data-preview-mode="custom">预览</button>
+        <div id="fontDisplayControls" class="display-controls">
+          <div class="segmented" id="previewModeBtns">
+            <button data-preview-mode="name">名称</button>
+            <button data-preview-mode="family">字族</button>
+            <button data-preview-mode="custom">预览</button>
+          </div>
+          <input id="previewTextInput" class="preview-text hidden" placeholder="预览文字" />
+          <label class="range-label">字号 <span id="previewSizeText">16</span></label>
+          <input id="previewSizeInput" class="size-range" type="range" min="10" max="40" value="16" />
+          <button id="toggleFamiliesBtn" class="icon-button" title="展开 / 折叠所有字族">⇅</button>
         </div>
-        <input id="previewTextInput" class="preview-text hidden" placeholder="预览文字" />
-        <label class="range-label">字号 <span id="previewSizeText">16</span></label>
-        <input id="previewSizeInput" class="size-range" type="range" min="10" max="40" value="16" />
-        <button id="toggleFamiliesBtn" class="icon-button" title="展开 / 折叠所有字族">⇅</button>
-        <button id="alwaysOnTopBtn" class="icon-button" title="窗口置顶">📌</button>
+        <div id="compositeDisplayControls" class="display-controls hidden">
+          <button id="newCompositeBtn" type="button">＋ 新建复合字体</button>
+        </div>
+        <button id="alwaysOnTopBtn" class="icon-button pin-button" type="button" title="窗口置顶">📌</button>
       </section>
 
-      <div id="summary" class="summary">准备就绪</div>
+      <nav id="modeTabs" class="mode-tabs" aria-label="列表类型">
+        <button id="fontTab" class="active" type="button">字体 <span id="fontTabCount">0</span></button>
+        <button id="compositeTab" type="button">复合字体 <span id="compositeTabCount">0</span></button>
+      </nav>
 
-      <main id="listViewport" class="list-viewport">
-        <div id="listInner" class="list-inner"></div>
-      </main>
+      <section id="fontPanel" class="content-panel">
+        <main id="listViewport" class="list-viewport">
+          <div id="listInner" class="list-inner"></div>
+        </main>
 
-      <section id="batchBar" class="batchbar hidden">
-        <span id="batchCount">已选 0 个字体</span>
-        <input id="batchTagInput" placeholder="标签名" />
-        <button id="batchAddTagBtn">添加标签</button>
-        <button id="batchRemoveTagBtn">移除标签</button>
-        <button id="batchFavoriteBtn">收藏</button>
-        <button id="batchUnfavoriteBtn">取消收藏</button>
-        <button id="batchHideBtn">隐藏</button>
-        <button id="batchUnhideBtn">取消隐藏</button>
+        <section id="batchBar" class="batchbar hidden">
+          <span id="batchCount">已选 0 个字体</span>
+          <input id="batchTagInput" placeholder="标签名" />
+          <button id="batchAddTagBtn">添加标签</button>
+          <button id="batchRemoveTagBtn">移除标签</button>
+          <button id="batchFavoriteBtn">收藏</button>
+          <button id="batchUnfavoriteBtn">取消收藏</button>
+          <button id="batchHideBtn">隐藏</button>
+          <button id="batchUnhideBtn">取消隐藏</button>
+        </section>
+
+        <section id="detail" class="detail">
+          <div class="empty">选择字体后显示详情</div>
+        </section>
       </section>
-
-      <section id="detail" class="detail">
-        <div class="empty">选择字体后显示详情</div>
+      <section id="compositePanel" class="content-panel hidden">
+        <div id="compositeList" class="composite-list"></div>
+        <div id="compositeEmpty" class="empty-state hidden">尚未创建复合字体</div>
+        <section id="compositeEditor" class="composite-editor hidden" aria-label="复合字体编辑器"></section>
+        <section id="fontPicker" class="font-picker hidden" aria-label="选择字体"></section>
+        <section id="unicodePicker" class="unicode-picker hidden" aria-label="添加 Unicode 分类"></section>
       </section>
 
       <footer id="status" class="status">准备就绪</footer>
@@ -130,6 +147,6 @@
       </div>
     </section>
 
-    <script src="./main.js"></script>
+    <script type="module" src="./main.js"></script>
   </body>
 </html>

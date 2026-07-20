@@ -1,5 +1,8 @@
 use serde::Deserialize;
 
+#[path = "photoshop/composite_font.rs"]
+mod composite_font;
+
 #[cfg(target_os = "macos")]
 #[path = "photoshop/macos.rs"]
 mod platform;
@@ -56,13 +59,16 @@ impl PhotoshopClient {
         Ok(data.fonts)
     }
 
+    fn execute_apply_jsx(expected_path: Option<&str>, jsx: &str) -> Result<String, String> {
+        Self::active(expected_path).and_then(|client| client.inner.do_javascript(jsx))
+    }
+
     pub fn apply_font_for_current_state(
         expected_path: Option<&str>,
         post_script_name: &str,
     ) -> Result<String, String> {
         let whole_layer_jsx = make_apply_jsx(post_script_name);
-        let first = Self::active(expected_path)
-            .and_then(|client| client.inner.do_javascript(&whole_layer_jsx));
+        let first = Self::execute_apply_jsx(expected_path, &whole_layer_jsx);
 
         #[cfg(windows)]
         {
@@ -84,9 +90,7 @@ impl PhotoshopClient {
 
             let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
             loop {
-                match Self::active(expected_path)
-                    .and_then(|client| client.inner.do_javascript(&jsx))
-                {
+                match Self::execute_apply_jsx(expected_path, &jsx) {
                     Ok(result) => return Ok(result),
                     Err(error)
                         if platform::is_com_busy_error(&error)
@@ -101,6 +105,37 @@ impl PhotoshopClient {
                     }
                 }
             }
+        }
+
+        #[cfg(not(windows))]
+        first
+    }
+
+    pub fn apply_composite_font_for_current_state(
+        expected_path: Option<&str>,
+        definition: &crate::composite_font::CompositeFontDefinition,
+    ) -> Result<String, String> {
+        let compiled = crate::composite_font::compile(definition)?;
+        let jsx = composite_font::make_apply_jsx(&compiled)?;
+        let first = Self::execute_apply_jsx(expected_path, &jsx);
+
+        #[cfg(windows)]
+        {
+            match first {
+                Ok(result) => return Ok(result),
+                Err(error) if platform::is_com_busy_error(&error) => {}
+                Err(error) => return Err(error),
+            }
+            platform::exit_text_editing()?;
+            for delay_ms in [20, 50] {
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                match Self::execute_apply_jsx(expected_path, &jsx) {
+                    Ok(result) => return Ok(result),
+                    Err(error) if platform::is_com_busy_error(&error) => continue,
+                    Err(error) => return Err(error),
+                }
+            }
+            Err("Photoshop remained busy after leaving text editing".to_string())
         }
 
         #[cfg(not(windows))]
@@ -145,6 +180,7 @@ ApplyFont();
     )
 }
 
+#[cfg(windows)]
 fn make_apply_range_jsx(
     post_script_name: &str,
     selected_text: &str,

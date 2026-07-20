@@ -1,8 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod composite_font;
 mod font_meta;
 mod photoshop;
 mod photoshop_theme;
+mod unicode_ranges;
 mod user_data;
 
 use photoshop::PhotoshopClient;
@@ -35,6 +37,14 @@ struct ApplyResult {
     ok: bool,
     result: String,
     post_script_name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompositeApplyResult {
+    ok: bool,
+    result: String,
+    name: String,
 }
 
 #[tauri::command]
@@ -90,6 +100,28 @@ fn apply_font(
         result,
         post_script_name,
     })
+}
+
+#[tauri::command]
+fn apply_composite_font(
+    composite_font: crate::composite_font::CompositeFontDefinition,
+    expected_path: Option<String>,
+) -> Result<CompositeApplyResult, String> {
+    let name = composite_font.name.clone();
+    let result = PhotoshopClient::apply_composite_font_for_current_state(
+        expected_path.as_deref(),
+        &composite_font,
+    )?;
+    Ok(CompositeApplyResult {
+        ok: result == "0",
+        result,
+        name,
+    })
+}
+
+#[tauri::command]
+fn unicode_catalog() -> crate::composite_font::UnicodeCatalog {
+    crate::composite_font::catalog()
 }
 
 #[tauri::command]
@@ -170,6 +202,8 @@ fn main() {
             photoshop_status,
             list_fonts,
             apply_font,
+            apply_composite_font,
+            unicode_catalog,
             load_user_data,
             save_user_data,
             export_user_data,

@@ -36,7 +36,7 @@ impl PlatformClient {
         unsafe {
             let dispid = get_dispid(&self.app, "DoJavaScript")?;
             let mut arg = variant_bstr(jsx);
-            let mut params = windows::Win32::System::Com::DISPPARAMS {
+            let params = windows::Win32::System::Com::DISPPARAMS {
                 rgvarg: &mut arg,
                 rgdispidNamedArgs: std::ptr::null_mut(),
                 cArgs: 1,
@@ -49,7 +49,7 @@ impl PlatformClient {
                     &windows::core::GUID::zeroed(),
                     0x800,
                     windows::Win32::System::Com::DISPATCH_METHOD,
-                    &mut params,
+                    &params,
                     Some(&mut result),
                     None,
                     None,
@@ -63,14 +63,14 @@ impl PlatformClient {
         unsafe {
             let dispid = get_dispid(&self.app, name)?;
             let mut result = windows::Win32::System::Variant::VARIANT::default();
-            let mut params = windows::Win32::System::Com::DISPPARAMS::default();
+            let params = windows::Win32::System::Com::DISPPARAMS::default();
             self.app
                 .Invoke(
                     dispid,
                     &windows::core::GUID::zeroed(),
                     0x800,
                     windows::Win32::System::Com::DISPATCH_PROPERTYGET,
-                    &mut params,
+                    &params,
                     Some(&mut result),
                     None,
                     None,
@@ -163,66 +163,80 @@ pub fn is_com_busy_error(error: &str) -> bool {
         || error.contains("rpc_e_servercall_retrylater")
 }
 
-pub fn capture_text_selection_and_exit() -> Result<Option<TextSelectionCapture>, String> {
+unsafe fn focus_photoshop_text_view() -> Result<(), String> {
     use std::time::{Duration, Instant};
     use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
-    use windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
     use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        VK_C, VK_CONTROL, VK_ESCAPE, VK_HOME, VK_SHIFT,
-    };
     use windows::Win32::UI::WindowsAndMessaging::{
         FindWindowW, GetGUIThreadInfo, GetWindowThreadProcessId, GUITHREADINFO,
     };
 
-    unsafe {
-        let main_window = FindWindowW(
-            windows::core::w!("Photoshop"),
-            windows::core::PCWSTR::null(),
-        )
-        .map_err(|err| format!("Photoshop window not found: {err:?}"))?;
+    let main_window = FindWindowW(
+        windows::core::w!("Photoshop"),
+        windows::core::PCWSTR::null(),
+    )
+    .map_err(|err| format!("Photoshop window not found: {err:?}"))?;
 
-        let mut photoshop_pid = 0u32;
-        let photoshop_thread = GetWindowThreadProcessId(main_window, Some(&mut photoshop_pid));
-        if photoshop_thread == 0 || photoshop_pid == 0 {
-            return Err("Could not identify the Photoshop window thread".to_string());
-        }
+    let mut photoshop_pid = 0u32;
+    let photoshop_thread = GetWindowThreadProcessId(main_window, Some(&mut photoshop_pid));
+    if photoshop_thread == 0 || photoshop_pid == 0 {
+        return Err("Could not identify the Photoshop window thread".to_string());
+    }
 
-        let mut thread_info = GUITHREADINFO {
-            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
-            ..Default::default()
-        };
+    let mut thread_info = GUITHREADINFO {
+        cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+        ..Default::default()
+    };
+    GetGUIThreadInfo(photoshop_thread, &mut thread_info)
+        .map_err(|err| format!("GetGUIThreadInfo failed: {err:?}"))?;
+
+    let focus_target = if window_belongs_to_photoshop_view(thread_info.hwndFocus, photoshop_pid) {
+        thread_info.hwndFocus
+    } else {
+        main_window
+    };
+
+    let automation: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)
+        .map_err(|err| format!("Could not create UI Automation: {err:?}"))?;
+    automation
+        .ElementFromHandle(focus_target)
+        .and_then(|element| element.SetFocus())
+        .map_err(|err| format!("Could not focus Photoshop: {err:?}"))?;
+
+    let focus_deadline = Instant::now() + Duration::from_millis(50);
+    loop {
+        thread_info.cbSize = std::mem::size_of::<GUITHREADINFO>() as u32;
         GetGUIThreadInfo(photoshop_thread, &mut thread_info)
-            .map_err(|err| format!("GetGUIThreadInfo failed: {err:?}"))?;
-
-        let focus_target = if window_belongs_to_photoshop_view(thread_info.hwndFocus, photoshop_pid)
-        {
-            thread_info.hwndFocus
-        } else {
-            main_window
-        };
-
-        let automation: IUIAutomation =
-            CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)
-                .map_err(|err| format!("Could not create UI Automation: {err:?}"))?;
-        automation
-            .ElementFromHandle(focus_target)
-            .and_then(|element| element.SetFocus())
-            .map_err(|err| format!("Could not focus Photoshop: {err:?}"))?;
-
-        let focus_deadline = Instant::now() + Duration::from_millis(50);
-        loop {
-            thread_info.cbSize = std::mem::size_of::<GUITHREADINFO>() as u32;
-            GetGUIThreadInfo(photoshop_thread, &mut thread_info)
-                .map_err(|err| format!("GetGUIThreadInfo failed after SetFocus: {err:?}"))?;
-            if window_belongs_to_photoshop_view(thread_info.hwndFocus, photoshop_pid) {
-                break;
-            }
-            if Instant::now() >= focus_deadline {
-                return Err("Photoshop text view did not receive focus".to_string());
-            }
-            std::thread::sleep(Duration::from_millis(2));
+            .map_err(|err| format!("GetGUIThreadInfo failed after SetFocus: {err:?}"))?;
+        if window_belongs_to_photoshop_view(thread_info.hwndFocus, photoshop_pid) {
+            return Ok(());
         }
+        if Instant::now() >= focus_deadline {
+            return Err("Photoshop text view did not receive focus".to_string());
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+pub fn exit_text_editing() -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
+
+    unsafe {
+        focus_photoshop_text_view()?;
+        send_keys(&[VK_ESCAPE])?;
+    }
+    Ok(())
+}
+
+pub fn capture_text_selection_and_exit() -> Result<Option<TextSelectionCapture>, String> {
+    use std::time::Duration;
+    use windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        VK_C, VK_CONTROL, VK_ESCAPE, VK_HOME, VK_SHIFT,
+    };
+
+    unsafe {
+        focus_photoshop_text_view()?;
         let clipboard_backup = match capture_clipboard() {
             Ok(data) => data,
             Err(_) => {

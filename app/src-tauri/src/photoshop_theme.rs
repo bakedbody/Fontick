@@ -177,7 +177,7 @@ fn newest_probe_json(start: SystemTime) -> Result<Option<PathBuf>, String> {
             if modified <= start {
                 return Ok(());
             }
-            if newest.as_ref().map_or(true, |(time, _)| modified > *time) {
+            if newest.as_ref().is_none_or(|(time, _)| modified > *time) {
                 newest = Some((modified, path.to_path_buf()));
             }
             Ok(())

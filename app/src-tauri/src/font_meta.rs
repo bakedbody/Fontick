@@ -162,7 +162,7 @@ fn parse_font_weight_at(bytes: &[u8], sfnt_offset: usize) -> Result<u16, String>
     if os2.len() < 6 {
         return Err("OS/2 table too short".to_string());
     }
-    Ok(be_u16(os2, 4)?)
+    be_u16(os2, 4)
 }
 
 fn parse_font_names_at(bytes: &[u8], sfnt_offset: usize) -> Result<Vec<NameRecord>, String> {
@@ -243,7 +243,7 @@ fn table_at<'a>(bytes: &'a [u8], sfnt_offset: usize, tag: &[u8; 4]) -> Option<&'
 
 fn decode_name(platform_id: u16, _encoding_id: u16, raw: &[u8]) -> Option<String> {
     if platform_id == 0 || platform_id == 3 {
-        if raw.len() % 2 != 0 {
+        if !raw.len().is_multiple_of(2) {
             return None;
         }
         let units = raw

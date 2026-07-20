@@ -1,3 +1,10 @@
+import {
+  createCompositeFontEditor,
+  createCompositeFontsController,
+  createFontSearchMatcher,
+  normalizeCompositeFont,
+} from "./composite-fonts.js";
+
 const { invoke } = window.__TAURI__.core;
 const appWindow = window.__TAURI__.window.getCurrentWindow();
 
@@ -6,9 +13,10 @@ const familyHeight = 42;
 const overscan = 8;
 
 const defaultUserData = () => ({
-  version: 1,
+  version: 2,
   fonts: {},
   recent: [],
+  compositeFonts: [],
   settings: {
     previewMode: "family",
     previewText: "永字八法 Aa123",
@@ -23,6 +31,7 @@ const defaultUserData = () => ({
 const state = {
   rawFonts: [],
   fonts: [],
+  filteredFontCount: 0,
   flatItems: [],
   familyTotals: new Map(),
   collapsedFamilies: new Set(),
@@ -35,6 +44,7 @@ const state = {
   previewMeta: new Map(),
   previewMetaLoading: new Set(),
   alwaysOnTop: false,
+  viewMode: "fonts",
   userData: defaultUserData(),
   filters: {
     favorite: false,
@@ -63,13 +73,26 @@ const refs = {
   previewSizeInput: document.querySelector("#previewSizeInput"),
   previewSizeText: document.querySelector("#previewSizeText"),
   displaybar: document.querySelector(".displaybar"),
+  fontDisplayControls: document.querySelector("#fontDisplayControls"),
+  compositeDisplayControls: document.querySelector("#compositeDisplayControls"),
   toggleFamiliesBtn: document.querySelector("#toggleFamiliesBtn"),
   alwaysOnTopBtn: document.querySelector("#alwaysOnTopBtn"),
+  newCompositeBtn: document.querySelector("#newCompositeBtn"),
+  fontTab: document.querySelector("#fontTab"),
+  compositeTab: document.querySelector("#compositeTab"),
+  fontTabCount: document.querySelector("#fontTabCount"),
+  compositeTabCount: document.querySelector("#compositeTabCount"),
+  fontPanel: document.querySelector("#fontPanel"),
+  compositePanel: document.querySelector("#compositePanel"),
+  compositeList: document.querySelector("#compositeList"),
+  compositeEmpty: document.querySelector("#compositeEmpty"),
+  compositeEditor: document.querySelector("#compositeEditor"),
+  fontPicker: document.querySelector("#fontPicker"),
+  unicodePicker: document.querySelector("#unicodePicker"),
   metaModeBtns: document.querySelector("#metaModeBtns"),
   batchBar: document.querySelector("#batchBar"),
   batchCount: document.querySelector("#batchCount"),
   batchTagInput: document.querySelector("#batchTagInput"),
-  summary: document.querySelector("#summary"),
   viewport: document.querySelector("#listViewport"),
   inner: document.querySelector("#listInner"),
   detail: document.querySelector("#detail"),
@@ -85,8 +108,49 @@ const refs = {
   missingFontsList: document.querySelector("#missingFontsList"),
 };
 
-let searchTimer = null;
+const searchTimers = { fonts: null, composite: null };
 let saveTimer = null;
+
+let compositeController;
+const compositeEditor = createCompositeFontEditor({
+  elements: {
+    editor: refs.compositeEditor,
+    fontPicker: refs.fontPicker,
+    unicodePicker: refs.unicodePicker,
+  },
+  getFonts: () => state.fonts,
+  getCompositeFonts: () => state.userData.compositeFonts,
+  setCompositeFonts: (values) => { state.userData.compositeFonts = values; },
+  invoke,
+  previewFont(element, font) {
+    applyPreviewFontStyle(element, font);
+    requestPreviewMeta([font]);
+  },
+  onDataChanged() {
+    saveUserDataSoon();
+    renderSummary();
+    if (state.viewMode === "composite") compositeController.render();
+  },
+});
+
+compositeController = createCompositeFontsController({
+  elements: {
+    list: refs.compositeList,
+    empty: refs.compositeEmpty,
+    count: refs.compositeTabCount,
+  },
+  getFonts: () => state.fonts,
+  getCompositeFonts: () => state.userData.compositeFonts,
+  invoke,
+  expectedPath,
+  setBusy,
+  setStatus,
+  setError,
+  onEdit: (definition) => compositeEditor.open(definition),
+  onCopy: (definition) => compositeEditor.copy(definition),
+  onRename: (definition) => compositeEditor.rename(definition),
+  onDelete: (definition) => compositeEditor.remove(definition),
+});
 
 bindEvents();
 bootstrap();
@@ -105,10 +169,16 @@ function bindEvents() {
     });
   }
   refs.searchInput.addEventListener("input", () => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      state.query = refs.searchInput.value;
-      rebuildList();
+    const mode = state.viewMode;
+    const value = refs.searchInput.value;
+    clearTimeout(searchTimers[mode]);
+    searchTimers[mode] = setTimeout(() => {
+      if (mode === "composite") {
+        compositeController.setQuery(value);
+      } else {
+        state.query = value;
+        rebuildList();
+      }
       render();
     }, 60);
   });
@@ -158,6 +228,9 @@ function bindEvents() {
   });
   refs.toggleFamiliesBtn.addEventListener("click", toggleAllFamilies);
   refs.alwaysOnTopBtn.addEventListener("click", toggleAlwaysOnTop);
+  refs.fontTab.addEventListener("click", () => setViewMode("fonts"));
+  refs.compositeTab.addEventListener("click", () => setViewMode("composite"));
+  refs.newCompositeBtn.addEventListener("click", () => compositeEditor.create());
   refs.metaModeBtns.addEventListener("click", (event) => {
     const mode = event.target?.dataset?.metaMode;
     if (!mode) return;
@@ -237,13 +310,15 @@ async function refreshFonts() {
 
 function normalizeUserData(data) {
   const base = defaultUserData();
-  const merged = {
-    version: 1,
+  return {
+    version: 2,
     fonts: data?.fonts && typeof data.fonts === "object" ? data.fonts : {},
     recent: Array.isArray(data?.recent) ? data.recent.slice(0, 100) : [],
+    compositeFonts: Array.isArray(data?.compositeFonts)
+      ? data.compositeFonts.map(normalizeCompositeFont)
+      : [],
     settings: { ...base.settings, ...(data?.settings || {}) },
   };
-  return merged;
 }
 
 function normalizeFont(font) {
@@ -309,6 +384,7 @@ function rebuildFontsFromUserData() {
 
 function rebuildList() {
   const filtered = filterFonts(state.fonts);
+  state.filteredFontCount = filtered.length;
   const grouped = groupFonts(filtered, state.fonts);
   state.flatItems = flattenGroups(grouped);
   const max = Math.max(0, totalHeight(state.flatItems) - (refs.viewport.clientHeight || 400));
@@ -316,7 +392,7 @@ function rebuildList() {
 }
 
 function filterFonts(fonts) {
-  const tokens = state.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matchesSearch = createFontSearchMatcher(state.query);
   const recentSet = new Set(state.userData.recent);
   return fonts.filter((font) => {
     if (!state.userData.settings.showHidden && font.hidden) return false;
@@ -328,7 +404,7 @@ function filterFonts(fonts) {
     for (const tag of state.filters.userTags) {
       if (!font.userTags.includes(tag)) return false;
     }
-    return tokens.every((token) => font.searchText.includes(token));
+    return matchesSearch(font);
   });
 }
 
@@ -397,24 +473,46 @@ function representativeFont(fonts) {
   return fonts.find((f) => /regular|normal/i.test(f.style || f.name)) || fonts[Math.floor(fonts.length / 2)] || fonts[0];
 }
 
+function setViewMode(mode) {
+  state.viewMode = mode === "composite" ? "composite" : "fonts";
+  const composite = state.viewMode === "composite";
+  refs.fontPanel.classList.toggle("hidden", composite);
+  refs.compositePanel.classList.toggle("hidden", !composite);
+  refs.fontDisplayControls.classList.toggle("hidden", composite);
+  refs.compositeDisplayControls.classList.toggle("hidden", !composite);
+  refs.filterToggleBtn.classList.toggle("hidden", composite);
+  refs.filterPanel.classList.add("hidden");
+  refs.searchInput.placeholder = composite
+    ? "搜索复合字体"
+    : "搜索字体 / 拼音 / 字族 / PostScriptName";
+  refs.searchInput.value = composite ? compositeController.query() : state.query;
+  refs.fontTab.classList.toggle("active", !composite);
+  refs.compositeTab.classList.toggle("active", composite);
+  render();
+}
+
 function render() {
   syncControls();
   renderSummary();
   renderFilters();
-  renderList();
-  renderDetail();
-  renderBatchBar();
+  if (state.viewMode === "composite") compositeController.render();
+  if (state.viewMode === "fonts") {
+    renderList();
+    renderDetail();
+    renderBatchBar();
+  }
 }
 
 function renderSummary() {
-  const visibleFonts = state.flatItems.filter((item) => item.type === "font").length;
   const total = state.fonts.length;
-  refs.summary.textContent = state.query || hasActiveFilters()
-    ? `匹配 ${visibleFonts} / ${total} 个字体`
-    : `${total} 个字体`;
+  refs.fontTabCount.textContent = state.query || hasActiveFilters()
+    ? `${state.filteredFontCount}/${total}`
+    : String(total);
+  refs.compositeTabCount.textContent = String(state.userData.compositeFonts.length);
 }
 
 function renderList() {
+  if (state.viewMode !== "fonts") return;
   const viewportHeight = refs.viewport.clientHeight || 400;
   const total = totalHeight(state.flatItems);
   refs.inner.style.height = `${total}px`;
@@ -582,6 +680,7 @@ function tagSummary(font) {
 }
 
 function renderDetail() {
+  if (state.viewMode !== "fonts") return;
   refs.detail.innerHTML = "";
   refs.detail.classList.toggle("hidden", !state.selected || state.selectedBatch.size >= 2);
   if (!state.selected || state.selectedBatch.size >= 2) return;
@@ -841,6 +940,7 @@ function renderUserTagFilters() {
 }
 
 function renderBatchBar() {
+  if (state.viewMode !== "fonts") return;
   refs.batchBar.classList.toggle("hidden", state.selectedBatch.size < 2);
   refs.batchCount.textContent = `已选 ${state.selectedBatch.size} 个字体`;
 }
@@ -1273,6 +1373,7 @@ function requestPreviewMeta(fonts) {
     .finally(() => {
       for (const postScriptName of batch) state.previewMetaLoading.delete(postScriptName);
       renderList();
+      compositeEditor.refreshFontPickerPreview();
     });
 }
 
