@@ -84,8 +84,7 @@ fn list_fonts(expected_path: Option<String>) -> Result<Vec<FontItem>, String> {
     Ok(fonts)
 }
 
-#[tauri::command]
-fn apply_font(
+fn apply_font_blocking(
     post_script_name: String,
     expected_path: Option<String>,
 ) -> Result<ApplyResult, String> {
@@ -100,6 +99,28 @@ fn apply_font(
         result,
         post_script_name,
     })
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn apply_font(
+    post_script_name: String,
+    expected_path: Option<String>,
+) -> Result<ApplyResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        apply_font_blocking(post_script_name, expected_path)
+    })
+    .await
+    .map_err(|error| format!("等待 Photoshop 字体修改任务失败：{error}"))?
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn apply_font(
+    post_script_name: String,
+    expected_path: Option<String>,
+) -> Result<ApplyResult, String> {
+    apply_font_blocking(post_script_name, expected_path)
 }
 
 #[tauri::command]

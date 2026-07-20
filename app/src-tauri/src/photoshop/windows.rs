@@ -3,11 +3,7 @@ pub struct PlatformClient {
     app: windows::Win32::System::Com::IDispatch,
 }
 
-#[derive(Debug, Clone)]
-pub struct TextSelectionCapture {
-    pub selected_text: String,
-    pub absolute_prefix: String,
-}
+use super::TextSelectionCapture;
 
 impl PlatformClient {
     pub fn active(expected_path: Option<&str>) -> Result<Self, String> {
@@ -281,18 +277,22 @@ pub fn capture_text_selection_and_exit() -> Result<Option<TextSelectionCapture>,
             send_keys(&[VK_CONTROL, VK_C])?;
             prefix_copied = wait_for_clipboard_change(retry_sequence, Duration::from_millis(80));
         }
-        if !prefix_copied {
-            send_keys(&[VK_ESCAPE])?;
-            drop(clipboard_backup);
-            return Ok(None);
-        }
-        let absolute_prefix = match read_unicode_clipboard(Duration::from_millis(20)) {
-            Some(text) if !text.is_empty() => text,
-            _ => {
-                send_keys(&[VK_ESCAPE])?;
-                drop(clipboard_backup);
-                return Ok(None);
+        let absolute_prefix = if prefix_copied {
+            match read_unicode_clipboard(Duration::from_millis(20)) {
+                Some(text) => text,
+                None => {
+                    send_keys(&[VK_ESCAPE])?;
+                    drop(clipboard_backup);
+                    return Err(
+                        "未能从 Photoshop 复制选区前缀，已取消字体修改。请重试。".to_string()
+                    );
+                }
             }
+        } else {
+            // A forward selection anchored at the beginning collapses to an
+            // empty range after Ctrl+Shift+Home. Ctrl+C then leaves the
+            // clipboard unchanged, so two timeouts mean a valid empty prefix.
+            String::new()
         };
         send_keys(&[VK_ESCAPE])?;
         drop(clipboard_backup);
