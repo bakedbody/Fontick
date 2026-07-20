@@ -108,8 +108,7 @@ impl FontPool {
     }
 
     fn optional_index(&mut self, font: Option<&str>) -> i32 {
-        font.map(|font| self.index(font) as i32)
-            .unwrap_or(INHERIT_FONT)
+        font.map(|font| self.index(font) as i32).unwrap_or(0)
     }
 }
 
@@ -395,6 +394,20 @@ mod tests {
             compiled.target_for(0x0301),
             compiled.font_index("Mark-Regular")
         );
+    }
+
+    #[test]
+    fn base_fallback_does_not_inherit_the_previous_category_font() {
+        let mut definition = sample_definition();
+        definition.builtin_rules.han = None;
+        let compiled = compile(&definition).unwrap();
+
+        assert_eq!(
+            compiled.target_for('1' as u32),
+            compiled.font_index("Number-Regular")
+        );
+        assert_eq!(compiled.target_for('說' as u32), 0);
+        assert_eq!(compiled.target_for(0x0301), INHERIT_FONT);
     }
 
     #[test]
