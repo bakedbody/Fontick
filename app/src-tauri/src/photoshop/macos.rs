@@ -337,8 +337,6 @@ impl PlatformClient {
             if !path_matches(&actual, expected) {
                 return Err(format!("Connected to wrong Photoshop: {}", actual));
             }
-        } else {
-            ps.version()?;
         }
 
         Ok(ps)
