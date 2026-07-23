@@ -110,6 +110,9 @@ const refs = {
 
 const searchTimers = { fonts: null, composite: null };
 let saveTimer = null;
+const previewMetaPending = new Set();
+let previewMetaFlushTimer = null;
+let previewMetaFlushing = false;
 
 let compositeController;
 const compositeEditor = createCompositeFontEditor({
@@ -122,10 +125,8 @@ const compositeEditor = createCompositeFontEditor({
   getCompositeFonts: () => state.userData.compositeFonts,
   setCompositeFonts: (values) => { state.userData.compositeFonts = values; },
   invoke,
-  previewFont(element, font) {
-    applyPreviewFontStyle(element, font);
-    requestPreviewMeta([font]);
-  },
+  applyPreviewFont: applyPreviewFontStyle,
+  requestPreviewMeta,
   onDataChanged() {
     saveUserDataSoon();
     renderSummary();
@@ -1343,38 +1344,66 @@ function cssString(value) {
 }
 
 function requestPreviewMeta(fonts) {
-  const batch = [];
   for (const font of fonts) {
     const postScriptName = font?.postScriptName;
     if (!postScriptName) continue;
     if (state.previewMeta.has(postScriptName)) continue;
     if (state.previewMetaLoading.has(postScriptName)) continue;
-    state.previewMetaLoading.add(postScriptName);
-    batch.push(postScriptName);
-    if (batch.length >= 20) break;
+    if (previewMetaPending.has(postScriptName)) continue;
+    previewMetaPending.add(postScriptName);
   }
-  if (!batch.length) return;
 
-  invoke("resolve_font_preview_meta", { postScriptNames: batch })
-    .then((items) => {
+  schedulePreviewMetaFlush();
+}
+
+function schedulePreviewMetaFlush() {
+  if (!previewMetaPending.size || previewMetaFlushing || previewMetaFlushTimer !== null) return;
+  previewMetaFlushTimer = setTimeout(() => {
+    previewMetaFlushTimer = null;
+    flushPreviewMetaQueue();
+  }, 0);
+}
+
+async function flushPreviewMetaQueue() {
+  if (previewMetaFlushing) return;
+  previewMetaFlushing = true;
+  let shouldRefresh = false;
+
+  try {
+    while (previewMetaPending.size) {
+      const batch = [...previewMetaPending].slice(0, 20);
       for (const postScriptName of batch) {
-        state.previewMeta.set(postScriptName, { postScriptName, weight: 0, localNames: [] });
+        previewMetaPending.delete(postScriptName);
+        state.previewMetaLoading.add(postScriptName);
       }
-      for (const item of items || []) {
-        if (!item?.postScriptName) continue;
-        state.previewMeta.set(item.postScriptName, item);
+
+      try {
+        const items = await invoke("resolve_font_preview_meta", { postScriptNames: batch });
+        for (const postScriptName of batch) {
+          state.previewMeta.set(postScriptName, { postScriptName, weight: 0, localNames: [] });
+        }
+        for (const item of items || []) {
+          if (!item?.postScriptName) continue;
+          state.previewMeta.set(item.postScriptName, item);
+        }
+      } catch {
+        for (const postScriptName of batch) {
+          state.previewMeta.set(postScriptName, { postScriptName, weight: 0, localNames: [] });
+        }
+      } finally {
+        for (const postScriptName of batch) state.previewMetaLoading.delete(postScriptName);
       }
-    })
-    .catch(() => {
-      for (const postScriptName of batch) {
-        state.previewMeta.set(postScriptName, { postScriptName, weight: 0, localNames: [] });
-      }
-    })
-    .finally(() => {
-      for (const postScriptName of batch) state.previewMetaLoading.delete(postScriptName);
+
+      shouldRefresh = true;
+    }
+  } finally {
+    previewMetaFlushing = false;
+    schedulePreviewMetaFlush();
+    if (shouldRefresh) {
       renderList();
       compositeEditor.refreshFontPickerPreview();
-    });
+    }
+  }
 }
 
 function syncControls() {

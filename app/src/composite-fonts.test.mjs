@@ -211,6 +211,38 @@ test("font picker keeps the same focused search input while filtering Chinese te
   );
 });
 
+test("font picker only renders the visible virtualized rows", () => {
+  const fonts = Array.from({ length: 100 }, (_, index) => ({
+    family: `Font ${index}`,
+    style: "Regular",
+    postScriptName: `Font-${String(index).padStart(3, "0")}`,
+    searchText: `font ${index}`,
+  }));
+  const previewBatches = [];
+  const harness = editorHarness({
+    getFonts: () => fonts,
+    requestPreviewMeta: (visibleFonts) => previewBatches.push(visibleFonts),
+  });
+  harness.controller.open(normalizeCompositeFont({ name: "Mix", baseFont: "Font-000" }));
+  harness.byClass("base-font-row")[0].querySelector(".rule-font-button").emit("click");
+
+  const list = harness.byClass("picker-list", harness.fontPicker)[0];
+  const initialRows = harness.byClass("font-picker-row", harness.fontPicker);
+  assert.ok(initialRows.length < fonts.length);
+  assert.equal(previewBatches.length, 1);
+  assert.equal(previewBatches[0].length, initialRows.length);
+
+  list.clientHeight = 88;
+  list.scrollTop = 50 * 44;
+  list.emit("scroll");
+  const renderedTitles = findElements(harness.fontPicker, (element) => element.title)
+    .map((element) => element.title);
+  assert.equal(renderedTitles.includes("Font-050"), true);
+  assert.equal(renderedTitles.includes("Font-000"), false);
+  assert.equal(previewBatches.length, 2);
+  assert.equal(previewBatches[1].some((font) => font.postScriptName === "Font-050"), true);
+});
+
 test("opening another font picker cancels the previous pending search render", async () => {
   const fonts = [
     { family: "Arial", style: "Regular", postScriptName: "ArialMT", searchText: "arial regular arialmt" },
@@ -219,7 +251,7 @@ test("opening another font picker cancels the previous pending search render", a
   const previewCalls = [];
   const harness = editorHarness({
     getFonts: () => fonts,
-    previewFont: (element, font) => previewCalls.push({ element, font }),
+    applyPreviewFont: (element, font) => previewCalls.push({ element, font }),
   });
   harness.controller.open(normalizeCompositeFont({ name: "Mix", baseFont: "ArialMT" }));
   harness.byClass("base-font-row")[0].querySelector(".rule-font-button").emit("click");

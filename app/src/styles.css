@@ -621,6 +621,21 @@ button:disabled {
   text-align: left;
 }
 
+.font-picker-list {
+  display: block;
+}
+
+.font-picker-list-inner {
+  position: relative;
+  width: 100%;
+}
+
+.font-picker-list .font-picker-row {
+  position: absolute;
+  left: 0;
+  height: 40px;
+}
+
 .font-picker-row.active {
   border-color: var(--accent);
   background: var(--accent2);

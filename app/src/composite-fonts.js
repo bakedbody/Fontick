@@ -396,6 +396,9 @@ const builtinRuleLabels = [
   ["symbol", "符号"],
 ];
 
+const fontPickerRowHeight = 44;
+const fontPickerOverscan = 6;
+
 function appendButton(document, parent, text, onClick, className = "") {
   const button = document.createElement("button");
   button.type = "button";
@@ -416,7 +419,8 @@ export function createCompositeFontEditor({
   getCompositeFonts = () => [],
   setCompositeFonts = () => {},
   invoke = async () => ({ generalCategories: [], scripts: [] }),
-  previewFont = () => {},
+  applyPreviewFont = () => {},
+  requestPreviewMeta = () => {},
   onDataChanged = () => {},
   idFactory = defaultId,
   confirm = (message) => globalThis.confirm?.(message) ?? true,
@@ -428,6 +432,7 @@ export function createCompositeFontEditor({
   let unicodeCatalog = null;
   let fontPickerRequest = null;
   let fontPickerSearchTimer = null;
+  let fontPickerView = null;
   let fontPreviewRows = [];
   let draggedRule = null;
 
@@ -439,6 +444,8 @@ export function createCompositeFontEditor({
     if (element === fontPickerElement) {
       clearTimeout(fontPickerSearchTimer);
       fontPickerSearchTimer = null;
+      fontPickerView = null;
+      fontPreviewRows = [];
     }
     element?.classList.add("hidden");
     if (element) element.innerHTML = "";
@@ -794,7 +801,8 @@ export function createCompositeFontEditor({
     search.className = "picker-search";
     search.placeholder = "搜索字体 / 拼音 / 字族 / PostScriptName";
     const list = document.createElement("div");
-    list.className = "picker-list";
+    list.className = "picker-list font-picker-list";
+    list.addEventListener("scroll", renderFontPickerViewport);
     search.addEventListener("input", () => {
       clearTimeout(fontPickerSearchTimer);
       fontPickerSearchTimer = setTimeout(() => {
@@ -811,19 +819,52 @@ export function createCompositeFontEditor({
     const document = documentFor(list);
     if (!document) return;
     const fonts = (getFonts() || []).filter(createFontSearchMatcher(query));
+    const items = request.allowBaseFallback
+      ? [{ kind: "fallback" }, ...fonts.map((font) => ({ kind: "font", font }))]
+      : fonts.map((font) => ({ kind: "font", font }));
+    const inner = document.createElement("div");
+    inner.className = "font-picker-list-inner";
+    inner.style.height = `${items.length * fontPickerRowHeight}px`;
     list.innerHTML = "";
+    list.scrollTop = 0;
+    list.appendChild(inner);
+    fontPickerView = { list, inner, items, request };
+    renderFontPickerViewport();
+  }
+
+  function renderFontPickerViewport() {
+    const view = fontPickerView;
+    if (!view) return;
+    const { list, inner, items, request } = view;
+    const document = documentFor(list);
+    if (!document) return;
+    const scrollTop = Number(list.scrollTop) || 0;
+    const viewportHeight = Number(list.clientHeight) || 400;
+    const start = Math.max(0, Math.floor(scrollTop / fontPickerRowHeight) - fontPickerOverscan);
+    const end = Math.min(
+      items.length,
+      Math.ceil((scrollTop + viewportHeight) / fontPickerRowHeight) + fontPickerOverscan,
+    );
+    inner.innerHTML = "";
     fontPreviewRows = [];
-    if (request.allowBaseFallback) {
-      const fallback = appendButton(document, list, "跟随基础字体", () => {
-        request.onSelect(null);
-        closePicker(fontPickerElement);
-      }, "font-picker-row");
-      fallback.classList.toggle("active", request.selectedPostScriptName == null);
-    }
-    for (const font of fonts) {
+    const visibleFonts = [];
+    for (let index = start; index < end; index += 1) {
+      const item = items[index];
+      if (item.kind === "fallback") {
+        const fallback = appendButton(document, inner, "跟随基础字体", () => {
+          request.onSelect(null);
+          closePicker(fontPickerElement);
+        }, "font-picker-row");
+        fallback.style.top = `${index * fontPickerRowHeight}px`;
+        fallback.classList.toggle("active", request.selectedPostScriptName == null);
+        continue;
+      }
+
+      const { font } = item;
       const row = document.createElement("button");
       row.type = "button";
       row.className = "font-picker-row";
+      row.style.top = `${index * fontPickerRowHeight}px`;
       row.classList.toggle("active", request.selectedPostScriptName === font.postScriptName);
       row.title = font.postScriptName;
       const preview = document.createElement("span");
@@ -841,14 +882,16 @@ export function createCompositeFontEditor({
         request.onSelect(font.postScriptName);
         closePicker(fontPickerElement);
       });
-      list.appendChild(row);
+      inner.appendChild(row);
       fontPreviewRows.push({ element: preview, font });
-      previewFont(preview, font);
+      visibleFonts.push(font);
+      applyPreviewFont(preview, font);
     }
+    requestPreviewMeta(visibleFonts);
   }
 
   function refreshFontPickerPreview() {
-    for (const row of fontPreviewRows) previewFont(row.element, row.font);
+    for (const row of fontPreviewRows) applyPreviewFont(row.element, row.font);
   }
 
   async function openUnicodePicker() {
