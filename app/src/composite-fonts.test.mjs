@@ -275,7 +275,7 @@ test("maps composite apply errors to actionable messages", () => {
   assert.equal(mapCompositeApplyError("NO_TEXT_LAYER", definition), "当前选择中没有文字图层");
   assert.equal(mapCompositeApplyError("MISSING_FONT:Latin", definition), "缺少字体：Latin");
   assert.equal(mapCompositeApplyError("INVALID_REGEX:digits", definition), "复合字体“混排”的正则表达式无效：digits");
-  assert.equal(mapCompositeApplyError("custom failure", definition), "custom failure");
+  assert.equal(mapCompositeApplyError("custom failure", definition), "操作失败：custom failure");
 });
 
 test("blocks applying a composite font when a referenced font is missing", async () => {

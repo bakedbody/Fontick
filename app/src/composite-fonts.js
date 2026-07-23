@@ -1,3 +1,5 @@
+import { mapPhotoshopApplyError } from "./apply-errors.js";
+
 const builtinRuleKeys = [
   "han",
   "kana",
@@ -176,16 +178,9 @@ export function findMissingFonts(value, fonts = []) {
 }
 
 export function mapCompositeApplyError(result, definition) {
-  const message = String(result || "应用失败");
-  if (message === "NO_DOCUMENT") return "Photoshop 中没有打开的文档";
-  if (message === "NO_TEXT_LAYER") return "当前选择中没有文字图层";
-  if (message.startsWith("MISSING_FONT:")) {
-    return `缺少字体：${message.slice("MISSING_FONT:".length)}`;
-  }
-  if (message.startsWith("INVALID_REGEX:")) {
-    return `复合字体“${normalizeCompositeFont(definition).name}”的正则表达式无效：${message.slice("INVALID_REGEX:".length)}`;
-  }
-  return message;
+  return mapPhotoshopApplyError(result, {
+    compositeName: normalizeCompositeFont(definition).name,
+  });
 }
 
 function ruleSummary(value) {
@@ -242,7 +237,7 @@ export function createCompositeFontsController({
       if (result.ok) setStatus(`已应用复合字体“${normalized.name}”`);
       else setError(mapCompositeApplyError(result.result, normalized));
     } catch (error) {
-      setError(String(error));
+      setError(mapCompositeApplyError(error, normalized));
     } finally {
       setBusy(false);
     }

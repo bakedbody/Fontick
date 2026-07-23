@@ -1,3 +1,4 @@
+import { mapPhotoshopApplyError } from "./apply-errors.js";
 import {
   createCompositeFontEditor,
   createCompositeFontsController,
@@ -645,10 +646,10 @@ async function applyFont(font) {
       recordRecent(font.postScriptName);
       setStatus(`已应用：${font.postScriptName}`);
     } else {
-      setError(result.result || "应用失败");
+      setError(mapPhotoshopApplyError(result.result));
     }
   } catch (error) {
-    setError(String(error));
+    setError(mapPhotoshopApplyError(error));
   } finally {
     setBusy(false);
   }
