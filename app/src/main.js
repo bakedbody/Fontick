@@ -1,4 +1,5 @@
 import { mapPhotoshopApplyError } from "./apply-errors.js";
+import { showAppVersion } from "./version-display.js";
 import {
   createCompositeFontEditor,
   createCompositeFontsController,
@@ -8,6 +9,7 @@ import {
 
 const { invoke } = window.__TAURI__.core;
 const appWindow = window.__TAURI__.window.getCurrentWindow();
+const getAppVersion = window.__TAURI__.app?.getVersion;
 
 const rowHeight = 42;
 const familyHeight = 42;
@@ -107,6 +109,7 @@ const refs = {
   cleanMissingBtn: document.querySelector("#cleanMissingBtn"),
   hiddenFontsList: document.querySelector("#hiddenFontsList"),
   missingFontsList: document.querySelector("#missingFontsList"),
+  appVersion: document.querySelector("#appVersion"),
 };
 
 const searchTimers = { fonts: null, composite: null };
@@ -155,6 +158,7 @@ compositeController = createCompositeFontsController({
 });
 
 bindEvents();
+showAppVersion(refs.appVersion, getAppVersion);
 bootstrap();
 
 function bindEvents() {

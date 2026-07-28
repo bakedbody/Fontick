@@ -1076,3 +1076,15 @@ button:disabled {
   padding: 6px 2px 2px;
   color: var(--muted);
 }
+
+.about-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.about-version {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
